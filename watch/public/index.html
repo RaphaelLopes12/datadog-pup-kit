@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vigia Datadog</title>
+  <link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+  <header class="masthead" id="masthead" data-level="idle">
+    <div class="masthead__text">
+      <h1 id="headline">Aguardando a primeira verificação</h1>
+      <p id="checked" class="masthead__meta"></p>
+    </div>
+    <button type="button" id="check" class="action">Verificar agora</button>
+  </header>
+
+  <div class="layout">
+    <main id="services" class="services" aria-live="polite"></main>
+
+    <aside class="history" aria-labelledby="history-title">
+      <h2 id="history-title">Histórico</h2>
+      <ol id="history" class="history__list"></ol>
+      <p id="history-empty" class="empty">Nenhuma mudança de estado registrada. Quando um sinal disparar ou normalizar, aparece aqui.</p>
+    </aside>
+  </div>
+
+  <dialog id="detail" class="detail" aria-labelledby="detail-name">
+    <form method="dialog" class="detail__close">
+      <button class="action action--quiet" aria-label="Fechar">Fechar</button>
+    </form>
+    <p id="detail-service" class="detail__service"></p>
+    <h2 id="detail-name"></h2>
+    <p id="detail-state" class="detail__state"></p>
+    <p id="detail-text" class="detail__text"></p>
+    <pre id="detail-query" class="detail__query"></pre>
+    <div class="detail__actions">
+      <a id="detail-link" class="action" target="_blank" rel="noopener">Abrir no Datadog</a>
+      <button type="button" id="detail-copy" class="action action--quiet">Copiar prompt para o Cursor</button>
+    </div>
+  </dialog>
+
+  <script src="/dashboard.js" type="module"></script>
+</body>
+</html>

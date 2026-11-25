@@ -1,0 +1,14 @@
+{
+  "name": "datadog-pup-watch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local watcher that polls Datadog through the pup CLI and raises desktop alerts",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test"
+  }
+}

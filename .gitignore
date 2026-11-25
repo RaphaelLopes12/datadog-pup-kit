@@ -5,3 +5,5 @@
 tokens_*.json
 client_*.json
 sessions.json
+watch/config.json
+watch/data/

@@ -91,3 +91,49 @@ Abra o repositório do serviço, abra o agente e cole um dos prompts de `prompts
 - A rule proíbe escrita e exposição de token, mas rule é instrução e não barreira. As barreiras são o token somente leitura do login padrão e a aprovação de comandos.
 - Logs e traces podem conter dado pessoal. Não cole saída bruta em chat, issue ou commit.
 - Confirme com o time de segurança se o uso do CLI e o envio de dados de observabilidade para o modelo do Cursor estão dentro da política da empresa.
+
+## Vigia: painel local e alerta no Windows
+
+A pasta `watch/` tem um vigia que consulta o Datadog pelo `pup` em intervalo fixo, mostra o estado num painel local e dispara notificação do Windows quando um sinal muda de estado. Não usa IA nem key: reaproveita o login do `pup`.
+
+Requer Node 18 ou mais novo. Não tem dependência de npm, então não precisa de `npm install`.
+
+### Sinais vigiados
+
+| Sinal | Origem | Dispara quando |
+|---|---|---|
+| Monitor | `pup monitors list --tags=...` | O monitor entra em Alert, Warn ou No Data |
+| Erros em log | `pup logs aggregate --query=... --compute=count` | A contagem na janela passa do limite configurado |
+
+O segundo sinal existe para ambientes sem monitor, como homologação: aponte a query para `env:<homologação> status:error`.
+
+### Configurar
+
+```bash
+cd watch
+cp config.example.json config.json
+```
+
+Edite `config.json` com os serviços. O arquivo fica fora do git.
+
+| Campo | Função |
+|---|---|
+| `services[].name` | Nome exibido no painel |
+| `services[].monitorTags` | Tags que selecionam os monitors do serviço |
+| `services[].errorLogs.query` | Query de log contada a cada verificação (opcional) |
+| `services[].errorLogs.windowMinutes` | Janela da contagem |
+| `services[].errorLogs.threshold` | A partir de quantos erros na janela vira alerta |
+| `pollIntervalSeconds` | Intervalo entre verificações, mínimo 30 |
+| `notifications.notifyOnRecovery` | Notifica também quando o sinal volta ao normal |
+
+### Rodar
+
+```bash
+node src/main.js
+```
+
+O painel abre em `http://localhost:4319`. Deixe o terminal aberto; `Ctrl+C` encerra.
+
+Clicar num sinal mostra a query, o link para o Datadog e um botão que copia um prompt de investigação pronto para colar no agente do Cursor.
+
+O servidor escuta só em `127.0.0.1` e o histórico fica em `watch/data/history.json`.

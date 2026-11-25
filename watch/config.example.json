@@ -1,0 +1,22 @@
+{
+  "port": 4319,
+  "pollIntervalSeconds": 90,
+  "datadogAppUrl": "https://app.datadoghq.com",
+  "pupPath": "pup",
+  "openBrowserOnStart": true,
+  "notifications": {
+    "windowsToast": true,
+    "notifyOnRecovery": true
+  },
+  "services": [
+    {
+      "name": "my-service",
+      "monitorTags": ["service:my-service"],
+      "errorLogs": {
+        "query": "service:my-service env:hml status:error",
+        "windowMinutes": 15,
+        "threshold": 20
+      }
+    }
+  ]
+}
