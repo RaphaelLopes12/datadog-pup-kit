@@ -376,6 +376,114 @@ h3 {
   margin-top: 20px;
 }
 
+.detail__note {
+  margin: 14px 0 10px;
+  color: var(--muted);
+}
+
+.cases {
+  margin-bottom: 32px;
+}
+
+.case {
+  border: 1px solid var(--line);
+  border-left: 6px solid var(--idle);
+  border-radius: 3px;
+  background: var(--panel);
+}
+
+.case + .case {
+  margin-top: 8px;
+}
+
+.case[data-status="running"] {
+  border-left-color: var(--warn);
+}
+
+.case[data-status="finished"] {
+  border-left-color: var(--ok);
+}
+
+.case[data-status="error"],
+.case[data-status="cancelled"] {
+  border-left-color: var(--alarm);
+}
+
+.case summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.case summary strong {
+  font-family: var(--display);
+  font-stretch: 87%;
+  font-size: 1.1rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.case summary span {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.case__body {
+  padding: 0 16px 16px;
+}
+
+.case__steps {
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  font: 13px/1.55 "Cascadia Mono", Consolas, monospace;
+}
+
+.case__steps li {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  gap: 0 12px;
+  padding: 3px 0;
+  overflow-wrap: anywhere;
+}
+
+.case__steps time {
+  color: var(--muted);
+}
+
+.case__steps li[data-status="error"],
+.case__steps li[data-status="rejected"] {
+  color: var(--alarm);
+}
+
+.case__steps li[data-status="running"]::after {
+  content: "em andamento";
+  grid-column: 2;
+  color: var(--muted);
+}
+
+.case__report {
+  margin: 0 0 14px;
+  max-width: 78ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.case__error {
+  margin: 0 0 14px;
+  color: var(--alarm);
+  overflow-wrap: anywhere;
+}
+
+.case__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;

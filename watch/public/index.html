@@ -16,7 +16,10 @@
   </header>
 
   <div class="layout">
-    <main id="services" class="services" aria-live="polite"></main>
+    <main>
+      <section id="cases" class="cases" aria-label="Investigações" hidden></section>
+      <div id="services" class="services" aria-live="polite"></div>
+    </main>
 
     <aside class="history" aria-labelledby="history-title">
       <h2 id="history-title">Histórico</h2>
@@ -35,9 +38,12 @@
     <p id="detail-text" class="detail__text"></p>
     <pre id="detail-query" class="detail__query"></pre>
     <div class="detail__actions">
-      <a id="detail-link" class="action" target="_blank" rel="noopener">Abrir no Datadog</a>
+      <button type="button" id="detail-investigate" class="action">Investigar com o agente</button>
+      <a id="detail-link" class="action action--quiet" target="_blank" rel="noopener">Abrir no Datadog</a>
       <button type="button" id="detail-copy" class="action action--quiet">Copiar prompt para o Cursor</button>
     </div>
+    <p id="detail-agent-note" class="detail__note" hidden></p>
+    <button type="button" id="detail-login" class="action action--quiet" hidden>Entrar no Cursor</button>
   </dialog>
 
   <script src="/dashboard.js" type="module"></script>

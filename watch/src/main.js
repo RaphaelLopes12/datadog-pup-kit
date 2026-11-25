@@ -7,6 +7,8 @@ import { MonitorSignalSource } from './datadog/MonitorSignalSource.js';
 import { ErrorLogSignalSource } from './datadog/ErrorLogSignalSource.js';
 import { HistoryStore } from './monitoring/HistoryStore.js';
 import { Watcher } from './monitoring/Watcher.js';
+import { CursorAgentGateway } from './investigation/CursorAgentGateway.js';
+import { InvestigationService } from './investigation/InvestigationService.js';
 import { WindowsToastNotifier } from './notifications/WindowsToastNotifier.js';
 import { DashboardServer } from './web/DashboardServer.js';
 
@@ -29,16 +31,33 @@ async function run() {
   await historyStore.load();
 
   const dashboardUrl = `http://localhost:${configuration.port}`;
+  const notifier = new WindowsToastNotifier({
+    enabled: configuration.notifications.windowsToast,
+    includeRecoveries: configuration.notifications.notifyOnRecovery,
+    dashboardUrl
+  });
+
   const watcher = new Watcher({
     services: configuration.services,
     signalSources: [new MonitorSignalSource(sourceOptions), new ErrorLogSignalSource(sourceOptions)],
     historyStore,
-    notifier: new WindowsToastNotifier({
-      enabled: configuration.notifications.windowsToast,
-      includeRecoveries: configuration.notifications.notifyOnRecovery,
-      dashboardUrl
-    }),
+    notifier,
     intervalSeconds: configuration.pollIntervalSeconds
+  });
+
+  const investigations = new InvestigationService({
+    gateway: new CursorAgentGateway(),
+    pupClient,
+    services: configuration.services,
+    model: configuration.agent.model,
+    maximumMinutes: configuration.agent.maximumMinutes,
+    dataDirectory: path.join(rootDirectory, 'data')
+  });
+  await investigations.load();
+
+  investigations.on('finished', (investigation) => {
+    const outcome = investigation.status === 'finished' ? 'Investigação concluída' : 'Investigação interrompida';
+    notifier.show(`${outcome}: ${investigation.serviceName}`, investigation.signalName);
   });
 
   watcher.on('failed', (error) => console.error(`Check failed: ${error.message}`));
@@ -47,6 +66,7 @@ async function run() {
     port: configuration.port,
     publicDirectory: path.join(rootDirectory, 'public'),
     watcher,
+    investigations,
     datadogAppUrl: configuration.datadogAppUrl
   });
 
@@ -55,6 +75,7 @@ async function run() {
 
   console.log(`Painel: ${server.url}`);
   console.log(`Vigiando ${configuration.services.length} serviço(s) a cada ${configuration.pollIntervalSeconds}s. Ctrl+C para parar.`);
+  console.log(investigations.availability.available ? 'Agente: disponível.' : `Agente: indisponível. ${investigations.availability.reason}`);
 
   if (configuration.openBrowserOnStart) {
     openInBrowser(server.url);

@@ -8,9 +8,14 @@
     "windowsToast": true,
     "notifyOnRecovery": true
   },
+  "agent": {
+    "model": "composer-2.5",
+    "maximumMinutes": 10
+  },
   "services": [
     {
       "name": "my-service",
+      "repositoryPath": "C:/Repos/my-service",
       "monitorTags": ["service:my-service"],
       "errorLogs": {
         "query": "service:my-service env:hml status:error",

@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { InvestigationUnavailableError } from '../investigation/InvestigationService.js';
 
 const staticFiles = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
@@ -8,21 +9,54 @@ const staticFiles = {
   '/dashboard.js': { file: 'dashboard.js', type: 'text/javascript; charset=utf-8' }
 };
 
+const broadcastIntervalMs = 250;
+const maximumBodyBytes = 16 * 1024;
+
+function readJsonBody(request) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    request.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > maximumBodyBytes) {
+        reject(new Error('Request body too large'));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on('end', () => {
+      try {
+        resolve(chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {});
+      } catch {
+        reject(new Error('Request body is not valid JSON'));
+      }
+    });
+    request.on('error', reject);
+  });
+}
+
 export class DashboardServer {
   #port;
   #publicDirectory;
   #watcher;
+  #investigations;
   #datadogAppUrl;
   #server;
   #subscribers = new Set();
+  #broadcastTimer = null;
 
-  constructor({ port, publicDirectory, watcher, datadogAppUrl }) {
+  constructor({ port, publicDirectory, watcher, investigations, datadogAppUrl }) {
     this.#port = port;
     this.#publicDirectory = publicDirectory;
     this.#watcher = watcher;
+    this.#investigations = investigations;
     this.#datadogAppUrl = datadogAppUrl;
-    this.#server = createServer((request, response) => this.#handle(request, response));
-    this.#watcher.on('changed', () => this.#broadcast());
+    this.#server = createServer((request, response) => {
+      this.#handle(request, response).catch((error) => this.#sendJson(response, 500, { error: error.message }));
+    });
+    this.#watcher.on('changed', () => this.#scheduleBroadcast());
+    this.#investigations.on('changed', () => this.#scheduleBroadcast());
   }
 
   get url() {
@@ -37,12 +71,25 @@ export class DashboardServer {
   }
 
   #state() {
-    return { ...this.#watcher.snapshot(), datadogAppUrl: this.#datadogAppUrl };
+    return {
+      ...this.#watcher.snapshot(),
+      datadogAppUrl: this.#datadogAppUrl,
+      agent: this.#investigations.availability,
+      investigations: this.#investigations.investigations
+    };
   }
 
   #isLocalRequest(request) {
     const host = String(request.headers.host ?? '');
-    return host === `localhost:${this.#port}` || host === `127.0.0.1:${this.#port}`;
+    const hostIsLocal = host === `localhost:${this.#port}` || host === `127.0.0.1:${this.#port}`;
+    const origin = request.headers.origin;
+    const originIsLocal = !origin || origin === `http://localhost:${this.#port}` || origin === `http://127.0.0.1:${this.#port}`;
+    return hostIsLocal && originIsLocal;
+  }
+
+  #findSignal(serviceName, signalId) {
+    const service = this.#watcher.snapshot().services.find((candidate) => candidate.name === serviceName);
+    return service?.signals.find((signal) => signal.id === signalId) ?? null;
   }
 
   async #handle(request, response) {
@@ -52,19 +99,38 @@ export class DashboardServer {
     }
 
     const { pathname } = new URL(request.url, this.url);
+    const route = `${request.method} ${pathname}`;
 
-    if (request.method === 'GET' && pathname === '/api/state') {
+    if (route === 'GET /api/state') {
       this.#sendJson(response, 200, this.#state());
       return;
     }
 
-    if (request.method === 'GET' && pathname === '/api/events') {
+    if (route === 'GET /api/events') {
       this.#subscribe(request, response);
       return;
     }
 
-    if (request.method === 'POST' && pathname === '/api/check') {
+    if (route === 'POST /api/check') {
       this.#watcher.check();
+      this.#sendJson(response, 202, { accepted: true });
+      return;
+    }
+
+    if (route === 'POST /api/agent/login') {
+      this.#investigations.login().catch((error) => console.error(`Cursor login failed: ${error.message}`));
+      this.#sendJson(response, 202, { accepted: true });
+      return;
+    }
+
+    if (route === 'POST /api/investigations') {
+      await this.#startInvestigation(request, response);
+      return;
+    }
+
+    const cancelMatch = /^\/api\/investigations\/([0-9a-f-]{36})\/cancel$/.exec(pathname);
+    if (request.method === 'POST' && cancelMatch) {
+      await this.#investigations.cancel(cancelMatch[1]);
       this.#sendJson(response, 202, { accepted: true });
       return;
     }
@@ -80,7 +146,38 @@ export class DashboardServer {
     response.writeHead(404).end();
   }
 
+  async #startInvestigation(request, response) {
+    let body;
+    try {
+      body = await readJsonBody(request);
+    } catch (error) {
+      this.#sendJson(response, 400, { error: error.message });
+      return;
+    }
+
+    const signal = this.#findSignal(body.serviceName, body.signalId);
+    if (!signal) {
+      this.#sendJson(response, 404, { error: 'Sinal não encontrado. Atualize o painel e tente de novo.' });
+      return;
+    }
+
+    try {
+      const id = await this.#investigations.start({ serviceName: body.serviceName, signal });
+      this.#sendJson(response, 202, { id });
+    } catch (error) {
+      if (error instanceof InvestigationUnavailableError) {
+        this.#sendJson(response, 409, { error: error.message });
+        return;
+      }
+      throw error;
+    }
+  }
+
   #sendJson(response, status, body) {
+    if (response.headersSent) {
+      response.end();
+      return;
+    }
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     response.end(JSON.stringify(body));
   }
@@ -96,10 +193,16 @@ export class DashboardServer {
     request.on('close', () => this.#subscribers.delete(response));
   }
 
-  #broadcast() {
-    const payload = `data: ${JSON.stringify(this.#state())}\n\n`;
-    for (const subscriber of this.#subscribers) {
-      subscriber.write(payload);
+  #scheduleBroadcast() {
+    if (this.#broadcastTimer) {
+      return;
     }
+    this.#broadcastTimer = setTimeout(() => {
+      this.#broadcastTimer = null;
+      const payload = `data: ${JSON.stringify(this.#state())}\n\n`;
+      for (const subscriber of this.#subscribers) {
+        subscriber.write(payload);
+      }
+    }, broadcastIntervalMs);
   }
 }

@@ -7,3 +7,4 @@ client_*.json
 sessions.json
 watch/config.json
 watch/data/
+node_modules/

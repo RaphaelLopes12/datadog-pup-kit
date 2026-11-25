@@ -32,8 +32,22 @@ const elements = {
   detailText: document.getElementById('detail-text'),
   detailQuery: document.getElementById('detail-query'),
   detailLink: document.getElementById('detail-link'),
-  detailCopy: document.getElementById('detail-copy')
+  detailCopy: document.getElementById('detail-copy'),
+  detailInvestigate: document.getElementById('detail-investigate'),
+  detailAgentNote: document.getElementById('detail-agent-note'),
+  detailLogin: document.getElementById('detail-login'),
+  cases: document.getElementById('cases')
 };
+
+const caseStatusLabels = {
+  running: 'Investigando',
+  finished: 'Concluída',
+  error: 'Falhou',
+  cancelled: 'Interrompida'
+};
+
+const openCases = new Set();
+const knownCases = new Set();
 
 const timeFormat = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' });
 const dayFormat = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' });
@@ -212,6 +226,112 @@ function buildPrompt(service, signal) {
   ].filter((line) => line !== null).join('\n');
 }
 
+function renderAgentControls() {
+  const agent = currentState?.agent;
+  const running = currentState?.investigations.some((investigation) => investigation.status === 'running');
+  const available = Boolean(agent?.available);
+
+  elements.detailInvestigate.hidden = !available;
+  elements.detailInvestigate.disabled = Boolean(running);
+  elements.detailInvestigate.textContent = running ? 'Já há uma investigação em andamento' : 'Investigar com o agente';
+  elements.detailLogin.hidden = !agent?.canLogin;
+
+  if (!elements.detailAgentNote.dataset.pinned) {
+    elements.detailAgentNote.hidden = available;
+    elements.detailAgentNote.textContent = available ? '' : `Agente indisponível. ${agent?.reason ?? ''}`;
+  }
+}
+
+function pinAgentNote(text) {
+  elements.detailAgentNote.dataset.pinned = 'true';
+  elements.detailAgentNote.hidden = false;
+  elements.detailAgentNote.textContent = text;
+}
+
+function renderCase(investigation) {
+  if (!knownCases.has(investigation.id)) {
+    knownCases.add(investigation.id);
+    if (investigation.status === 'running') {
+      openCases.add(investigation.id);
+    }
+  }
+
+  const item = create('details', 'case');
+  item.dataset.status = investigation.status;
+  item.open = openCases.has(investigation.id);
+  item.addEventListener('toggle', () => {
+    if (item.open) {
+      openCases.add(investigation.id);
+    } else {
+      openCases.delete(investigation.id);
+    }
+  });
+
+  const summary = create('summary');
+  summary.append(
+    create('strong', null, `${investigation.serviceName}: ${investigation.signalName}`),
+    create('span', null, `${caseStatusLabels[investigation.status] ?? investigation.status}, ${timeFormat.format(new Date(investigation.startedAt))}`)
+  );
+
+  const body = create('div', 'case__body');
+
+  if (investigation.steps.length > 0) {
+    const steps = create('ol', 'case__steps');
+    for (const step of investigation.steps) {
+      const line = create('li');
+      line.dataset.status = step.status;
+      const moment = create('time', null, timeFormat.format(new Date(step.at)));
+      moment.dateTime = step.at;
+      line.append(moment, create('span', null, step.label));
+      steps.append(line);
+    }
+    body.append(steps);
+  }
+
+  if (investigation.error) {
+    body.append(create('p', 'case__error', investigation.error));
+  }
+
+  const text = investigation.report ?? investigation.draft;
+  if (text) {
+    body.append(create('p', 'case__report', text));
+  } else if (investigation.status === 'running' && investigation.steps.length === 0) {
+    body.append(create('p', 'empty', 'O agente está começando. As consultas aparecem aqui conforme ele roda.'));
+  }
+
+  const actions = create('div', 'case__actions');
+  if (investigation.status === 'running') {
+    const cancel = create('button', 'action action--quiet', 'Interromper');
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => fetch(`/api/investigations/${investigation.id}/cancel`, { method: 'POST' }));
+    actions.append(cancel);
+  } else if (investigation.report) {
+    const copy = create('button', 'action action--quiet', 'Copiar laudo');
+    copy.type = 'button';
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(investigation.report);
+        copy.textContent = 'Laudo copiado';
+      } catch {
+        copy.textContent = 'Não consegui copiar';
+      }
+    });
+    actions.append(copy);
+  }
+  if (actions.childElementCount > 0) {
+    body.append(actions);
+  }
+
+  item.append(summary, body);
+  return item;
+}
+
+function renderCases(state) {
+  const items = state.investigations.map(renderCase);
+  elements.cases.replaceChildren(...items);
+  elements.cases.hidden = items.length === 0;
+}
+
 function showDetail(service, signal) {
   openSignal = { service, signal };
   elements.detailService.textContent = service.name;
@@ -223,6 +343,8 @@ function showDetail(service, signal) {
   elements.detailQuery.textContent = signal.query ?? '';
   elements.detailLink.href = signal.url ?? currentState.datadogAppUrl;
   elements.detailCopy.textContent = 'Copiar prompt para o Cursor';
+  delete elements.detailAgentNote.dataset.pinned;
+  renderAgentControls();
   elements.detail.showModal();
 }
 
@@ -231,6 +353,8 @@ function render(state) {
   renderMasthead(state);
   renderServices(state);
   renderHistory(state);
+  renderCases(state);
+  renderAgentControls();
 }
 
 elements.check.addEventListener('click', () => {
@@ -248,6 +372,33 @@ elements.detailCopy.addEventListener('click', async () => {
   } catch {
     elements.detailCopy.textContent = 'Não consegui copiar. Permita acesso à área de transferência.';
   }
+});
+
+elements.detailInvestigate.addEventListener('click', async () => {
+  if (!openSignal) {
+    return;
+  }
+  elements.detailInvestigate.disabled = true;
+  const response = await fetch('/api/investigations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ serviceName: openSignal.service.name, signalId: openSignal.signal.id })
+  });
+
+  if (response.ok) {
+    elements.detail.close();
+    window.scrollTo({ top: 0 });
+    return;
+  }
+
+  const failure = await response.json().catch(() => ({}));
+  pinAgentNote(failure.error ?? 'Não consegui iniciar a investigação.');
+  elements.detailInvestigate.disabled = false;
+});
+
+elements.detailLogin.addEventListener('click', () => {
+  fetch('/api/agent/login', { method: 'POST' });
+  pinAgentNote('Conclua o login na aba do Cursor que abriu no navegador. O botão de investigar aparece aqui quando terminar.');
 });
 
 const stream = new EventSource('/api/events');

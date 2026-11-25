@@ -10,5 +10,8 @@
   "scripts": {
     "start": "node src/main.js",
     "test": "node --test"
+  },
+  "optionalDependencies": {
+    "@cursor/sdk": "^1.5.0"
   }
 }

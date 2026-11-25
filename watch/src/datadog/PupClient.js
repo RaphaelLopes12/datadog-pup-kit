@@ -36,6 +36,19 @@ export class PupClient {
   }
 
   async run(commandArguments) {
+    const output = await this.#withFallback([...commandArguments, '--output', 'json']);
+    try {
+      return JSON.parse(output);
+    } catch {
+      throw new PupError('pup returned output that is not JSON');
+    }
+  }
+
+  runText(commandArguments) {
+    return this.#withFallback(commandArguments);
+  }
+
+  async #withFallback(commandArguments) {
     try {
       return await this.#execute(commandArguments);
     } catch (error) {
@@ -49,32 +62,25 @@ export class PupClient {
   }
 
   #execute(commandArguments) {
-    const allArguments = [...this.#leadingArguments, ...commandArguments, '--output', 'json'];
-
     return new Promise((resolve, reject) => {
       execFile(
         this.#executable,
-        allArguments,
+        [...this.#leadingArguments, ...commandArguments],
         { timeout: this.#timeoutMs, maxBuffer: 64 * 1024 * 1024, windowsHide: true },
         (error, stdout, stderr) => {
-          if (error) {
-            if (error.code === 'ENOENT') {
-              reject(new PupError(`pup executable not found (${this.#executable})`, { notInstalled: true }));
-              return;
-            }
-            if (error.killed) {
-              reject(new PupError(`pup timed out after ${this.#timeoutMs / 1000}s`));
-              return;
-            }
-            reject(new PupError(summarizeFailure(stderr, stdout), { exitCode: error.code }));
+          if (!error) {
+            resolve(stdout);
             return;
           }
-
-          try {
-            resolve(JSON.parse(stdout));
-          } catch {
-            reject(new PupError('pup returned output that is not JSON'));
+          if (error.code === 'ENOENT') {
+            reject(new PupError(`pup executable not found (${this.#executable})`, { notInstalled: true }));
+            return;
           }
+          if (error.killed) {
+            reject(new PupError(`pup timed out after ${this.#timeoutMs / 1000}s`));
+            return;
+          }
+          reject(new PupError(summarizeFailure(stderr, stdout), { exitCode: error.code }));
         }
       );
     });

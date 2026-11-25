@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 
 const defaults = {
@@ -7,7 +8,8 @@ const defaults = {
   pupPath: 'pup',
   pupArguments: [],
   openBrowserOnStart: false,
-  notifications: { windowsToast: true, notifyOnRecovery: true }
+  notifications: { windowsToast: true, notifyOnRecovery: true },
+  agent: { model: 'composer-2.5', maximumMinutes: 10 }
 };
 
 export class ConfigurationError extends Error {}
@@ -39,18 +41,27 @@ function normalizeService(service, index) {
 
   requireCondition(monitorTags.length > 0 || errorLogs, `${label} needs monitorTags or errorLogs`);
 
-  return { name: service.name.trim(), monitorTags, errorLogs };
+  let repositoryPath = null;
+  if (service.repositoryPath) {
+    requireCondition(typeof service.repositoryPath === 'string' && existsSync(service.repositoryPath), `${label}.repositoryPath does not exist: ${service.repositoryPath}`);
+    repositoryPath = service.repositoryPath;
+  }
+
+  return { name: service.name.trim(), monitorTags, errorLogs, repositoryPath };
 }
 
 export function normalizeConfiguration(raw) {
   const merged = {
     ...defaults,
     ...raw,
-    notifications: { ...defaults.notifications, ...(raw.notifications ?? {}) }
+    notifications: { ...defaults.notifications, ...(raw.notifications ?? {}) },
+    agent: { ...defaults.agent, ...(raw.agent ?? {}) }
   };
 
   requireCondition(Number.isInteger(merged.port) && merged.port > 0 && merged.port < 65536, 'port must be a valid TCP port');
   requireCondition(merged.pollIntervalSeconds >= 30, 'pollIntervalSeconds must be at least 30');
+  requireCondition(typeof merged.agent.model === 'string' && merged.agent.model.trim(), 'agent.model is required');
+  requireCondition(merged.agent.maximumMinutes > 0, 'agent.maximumMinutes must be positive');
   requireCondition(Array.isArray(merged.services) && merged.services.length > 0, 'services must list at least one service');
 
   return {

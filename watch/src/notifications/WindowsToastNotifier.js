@@ -17,10 +17,6 @@ export class WindowsToastNotifier {
   }
 
   notify(transitions) {
-    if (!this.#enabled) {
-      return Promise.resolve();
-    }
-
     const description = describeTransitions(transitions, { includeRecoveries: this.#includeRecoveries });
     if (!description) {
       return Promise.resolve();
@@ -30,6 +26,10 @@ export class WindowsToastNotifier {
   }
 
   show(title, message) {
+    if (!this.#enabled) {
+      return Promise.resolve();
+    }
+
     return new Promise((resolve) => {
       execFile(
         'powershell.exe',

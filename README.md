@@ -137,3 +137,37 @@ O painel abre em `http://localhost:4319`. Deixe o terminal aberto; `Ctrl+C` ence
 Clicar num sinal mostra a query, o link para o Datadog e um botão que copia um prompt de investigação pronto para colar no agente do Cursor.
 
 O servidor escuta só em `127.0.0.1` e o histórico fica em `watch/data/history.json`.
+
+### Investigar com o agente
+
+Clicar num sinal e escolher "Investigar com o agente" inicia um agente do Cursor (pelo `@cursor/sdk`) que consulta o Datadog, lê o repositório do serviço e devolve um laudo com causa provável e evidências. As consultas aparecem no painel conforme rodam.
+
+Requisitos, além dos do vigia:
+
+- Node 22.13 ou mais novo.
+- `npm install` dentro de `watch/`, que baixa o SDK. Sem isso o vigia continua funcionando, só sem o botão.
+- Login do Cursor: o painel mostra "Entrar no Cursor", que abre o navegador e guarda a credencial em `~/.cursor/sdk/auth.json`. Como alternativa, defina `CURSOR_API_KEY` antes de iniciar.
+
+Configuração no `config.json`:
+
+| Campo | Função |
+|---|---|
+| `services[].repositoryPath` | Pasta do repositório do serviço, para o agente ler o código (opcional) |
+| `agent.model` | Modelo usado pelo agente |
+| `agent.maximumMinutes` | Tempo máximo de uma investigação antes de ser interrompida |
+
+O que o agente pode fazer:
+
+| Pode | Não pode |
+|---|---|
+| Ler, buscar e listar arquivos do `repositoryPath` | Executar comandos no terminal |
+| Rodar consultas de leitura do `pup` nos domínios de observabilidade | Editar ou criar arquivos |
+| Usar servidores MCP já configurados no repositório ou no usuário | Rodar `pup` de escrita, de autenticação ou de chaves |
+
+Cada chamada ao `pup` feita pelo agente passa por uma lista de domínios e comandos permitidos e recebe `--read-only`. Somado ao token de leitura do login, são três camadas independentes.
+
+Pontos de atenção:
+
+- O conteúdo que o agente lê (logs, traces, código) é enviado aos modelos hospedados do Cursor, com as mesmas regras de privacidade do plano usado na IDE.
+- O uso é cobrado no plano da conta logada e aparece no painel de uso do Cursor com a etiqueta SDK.
+- Uma investigação por vez. O histórico fica em `watch/data/investigations.json`.
