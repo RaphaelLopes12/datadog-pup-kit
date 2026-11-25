@@ -79,7 +79,7 @@ async function createService(gateway) {
   const investigations = new InvestigationService({
     gateway,
     pupClient: { run: async () => ({ data: [] }) },
-    services: [service],
+    getServices: () => [service],
     model: 'm',
     maximumMinutes: 1,
     dataDirectory

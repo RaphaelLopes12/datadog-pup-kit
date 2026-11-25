@@ -7,9 +7,10 @@ const defaults = {
   datadogAppUrl: 'https://app.datadoghq.com',
   pupPath: 'pup',
   pupArguments: [],
-  openBrowserOnStart: false,
+  openBrowserOnStart: true,
   notifications: { windowsToast: true, notifyOnRecovery: true },
-  agent: { model: 'composer-2.5', maximumMinutes: 10 }
+  agent: { model: 'composer-2.5', maximumMinutes: 10 },
+  services: []
 };
 
 export class ConfigurationError extends Error {}
@@ -20,34 +21,41 @@ function requireCondition(condition, message) {
   }
 }
 
-function normalizeService(service, index) {
-  const label = `services[${index}]`;
-  requireCondition(service && typeof service.name === 'string' && service.name.trim(), `${label}.name is required`);
+export function normalizeService(service, index) {
+  const label = typeof service?.name === 'string' && service.name.trim() ? `Serviço "${service.name.trim()}"` : `Serviço ${index + 1}`;
+  requireCondition(service && typeof service.name === 'string' && service.name.trim(), `${label}: informe o nome.`);
 
-  const monitorTags = service.monitorTags ?? [];
-  requireCondition(Array.isArray(monitorTags) && monitorTags.every((tag) => typeof tag === 'string'), `${label}.monitorTags must be a list of strings`);
+  const monitorTags = (service.monitorTags ?? []).map((tag) => String(tag).trim()).filter(Boolean);
 
   let errorLogs = null;
-  if (service.errorLogs) {
-    requireCondition(typeof service.errorLogs.query === 'string' && service.errorLogs.query.trim(), `${label}.errorLogs.query is required`);
+  if (service.errorLogs && String(service.errorLogs.query ?? '').trim()) {
     errorLogs = {
-      query: service.errorLogs.query,
+      query: String(service.errorLogs.query).trim(),
       windowMinutes: Number(service.errorLogs.windowMinutes ?? 15),
       threshold: Number(service.errorLogs.threshold ?? 20)
     };
-    requireCondition(errorLogs.windowMinutes > 0, `${label}.errorLogs.windowMinutes must be positive`);
-    requireCondition(errorLogs.threshold > 0, `${label}.errorLogs.threshold must be positive`);
+    requireCondition(errorLogs.windowMinutes > 0, `${label}: a janela de erros precisa ser maior que zero.`);
+    requireCondition(errorLogs.threshold > 0, `${label}: o limite de erros precisa ser maior que zero.`);
   }
 
-  requireCondition(monitorTags.length > 0 || errorLogs, `${label} needs monitorTags or errorLogs`);
+  requireCondition(monitorTags.length > 0 || errorLogs, `${label}: informe as tags dos monitors ou uma query de erros.`);
 
   let repositoryPath = null;
-  if (service.repositoryPath) {
-    requireCondition(typeof service.repositoryPath === 'string' && existsSync(service.repositoryPath), `${label}.repositoryPath does not exist: ${service.repositoryPath}`);
-    repositoryPath = service.repositoryPath;
+  const requestedPath = String(service.repositoryPath ?? '').trim();
+  if (requestedPath) {
+    requireCondition(existsSync(requestedPath), `${label}: a pasta do repositório não existe (${requestedPath}).`);
+    repositoryPath = requestedPath;
   }
 
   return { name: service.name.trim(), monitorTags, errorLogs, repositoryPath };
+}
+
+export function normalizeServices(services) {
+  requireCondition(Array.isArray(services), 'A lista de serviços é inválida.');
+  const normalized = services.map(normalizeService);
+  const names = normalized.map((service) => service.name.toLowerCase());
+  requireCondition(new Set(names).size === names.length, 'Há serviços com o mesmo nome.');
+  return normalized;
 }
 
 export function normalizeConfiguration(raw) {
@@ -62,12 +70,11 @@ export function normalizeConfiguration(raw) {
   requireCondition(merged.pollIntervalSeconds >= 30, 'pollIntervalSeconds must be at least 30');
   requireCondition(typeof merged.agent.model === 'string' && merged.agent.model.trim(), 'agent.model is required');
   requireCondition(merged.agent.maximumMinutes > 0, 'agent.maximumMinutes must be positive');
-  requireCondition(Array.isArray(merged.services) && merged.services.length > 0, 'services must list at least one service');
 
   return {
     ...merged,
     datadogAppUrl: String(merged.datadogAppUrl).replace(/\/+$/, ''),
-    services: merged.services.map(normalizeService)
+    services: normalizeServices(merged.services)
   };
 }
 
@@ -77,7 +84,7 @@ export async function loadConfiguration(filePath) {
     content = await readFile(filePath, 'utf8');
   } catch (error) {
     if (error.code === 'ENOENT') {
-      throw new ConfigurationError(`Configuration file not found: ${filePath}. Copy config.example.json to config.json and edit it.`);
+      return normalizeConfiguration({});
     }
     throw error;
   }

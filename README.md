@@ -4,6 +4,23 @@ Kit para usar o [pup](https://github.com/DataDog/pup), o CLI do Datadog, junto c
 
 Nenhuma API key ou App key é usada. O token fica no Windows Credential Manager do usuário.
 
+## Começo rápido
+
+1. Baixe o repositório (`git clone` ou o ZIP do GitHub).
+2. Dê duplo clique em `Iniciar-Vigia.cmd`.
+
+O arquivo instala o pup se faltar, baixa o SDK do Cursor e abre o painel no navegador. O resto é pela tela:
+
+| Passo | Onde |
+|---|---|
+| Entrar no Datadog | Botão "Entrar no Datadog" no topo do painel |
+| Cadastrar serviços | Botão "Serviços" |
+| Entrar no Cursor, para usar o agente | Clique num sinal e em "Entrar no Cursor" |
+
+Requer Node 22 ou mais novo já instalado. Deixe a janela preta aberta enquanto usa; fechar a janela encerra o vigia.
+
+As seções abaixo descrevem cada parte e o caminho manual por linha de comando.
+
 ## Conteúdo
 
 | Caminho | Função |

@@ -58,3 +58,9 @@ test('summarizes several transitions in one notification', () => {
 test('rejects a service without any signal configured', () => {
   assert.throws(() => normalizeConfiguration({ services: [{ name: 'svc' }] }), ConfigurationError);
 });
+
+test('starts with no services and rejects duplicated names', () => {
+  assert.deepEqual(normalizeConfiguration({}).services, []);
+  const duplicated = [{ name: 'svc', monitorTags: ['a'] }, { name: 'SVC', monitorTags: ['b'] }];
+  assert.throws(() => normalizeConfiguration({ services: duplicated }), ConfigurationError);
+});

@@ -36,8 +36,17 @@ const elements = {
   detailInvestigate: document.getElementById('detail-investigate'),
   detailAgentNote: document.getElementById('detail-agent-note'),
   detailLogin: document.getElementById('detail-login'),
-  cases: document.getElementById('cases')
+  cases: document.getElementById('cases'),
+  openSettings: document.getElementById('open-settings'),
+  settings: document.getElementById('settings'),
+  settingsList: document.getElementById('settings-list'),
+  settingsAdd: document.getElementById('settings-add'),
+  settingsError: document.getElementById('settings-error'),
+  settingsSave: document.getElementById('settings-save'),
+  settingsCancel: document.getElementById('settings-cancel')
 };
+
+let mastheadAction = 'check';
 
 const caseStatusLabels = {
   running: 'Investigando',
@@ -93,7 +102,58 @@ function sortSignals(signals) {
   });
 }
 
+function renderSetup(state) {
+  let setup = null;
+
+  if (!state.datadog.installed) {
+    setup = {
+      headline: 'O pup não está instalado',
+      meta: 'Feche a janela do vigia e abra de novo pelo arquivo Iniciar-Vigia.cmd, que instala o pup.',
+      action: null
+    };
+  } else if (state.datadog.loggingIn) {
+    setup = {
+      headline: 'Conclua o login no navegador',
+      meta: 'Uma aba do Datadog abriu para você autorizar o acesso de leitura. O painel continua sozinho depois disso.',
+      action: null
+    };
+  } else if (!state.datadog.authenticated) {
+    setup = {
+      headline: 'Falta entrar no Datadog',
+      meta: state.datadog.message && state.datadog.message !== 'Falta entrar no Datadog.' ? state.datadog.message : 'O acesso pedido é somente de leitura e fica guardado no Windows.',
+      action: { name: 'datadog-login', label: 'Entrar no Datadog' }
+    };
+  } else if (state.settings.services.length === 0) {
+    setup = {
+      headline: 'Nenhum serviço cadastrado',
+      meta: 'Cadastre o primeiro serviço para o vigia começar a consultar.',
+      action: { name: 'add-service', label: 'Adicionar serviço' }
+    };
+  }
+
+  if (!setup) {
+    return false;
+  }
+
+  elements.masthead.dataset.level = 'idle';
+  elements.headline.textContent = setup.headline;
+  elements.checked.textContent = setup.meta;
+  elements.check.hidden = setup.action === null;
+  elements.check.disabled = false;
+  elements.check.textContent = setup.action?.label ?? '';
+  mastheadAction = setup.action?.name ?? 'check';
+  document.title = 'Vigia Datadog';
+  return true;
+}
+
 function renderMasthead(state) {
+  if (renderSetup(state)) {
+    return;
+  }
+
+  mastheadAction = 'check';
+  elements.check.hidden = false;
+
   const signals = state.services.flatMap((service) => service.signals);
   const firingSignals = signals.filter((signal) => firing.has(signal.state));
   const affected = state.services.filter((service) => service.signals.some((signal) => firing.has(signal.state))).length;
@@ -357,9 +417,134 @@ function render(state) {
   renderAgentControls();
 }
 
+function field(labelText, hint, input, wide) {
+  const label = create('label', wide ? 'field field--wide' : 'field');
+  label.append(create('span', null, labelText), input);
+  if (hint) {
+    label.append(create('small', null, hint));
+  }
+  return label;
+}
+
+function textInput(name, value, placeholder) {
+  const input = create('input');
+  input.type = 'text';
+  input.name = name;
+  input.value = value ?? '';
+  input.placeholder = placeholder ?? '';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  return input;
+}
+
+function numberInput(name, value) {
+  const input = textInput(name, String(value));
+  input.type = 'number';
+  input.min = '1';
+  return input;
+}
+
+function serviceEditor(service) {
+  const editor = create('fieldset', 'settings__service');
+  const legend = create('legend', null, service.name || 'Novo serviço');
+
+  const name = textInput('name', service.name, 'meu-servico-api');
+  const tags = textInput('monitorTags', (service.monitorTags ?? []).join(', '), 'service:meu-servico-api');
+  const query = textInput('query', service.errorLogs?.query, 'service:meu-servico-api env:hml status:error');
+  const threshold = numberInput('threshold', service.errorLogs?.threshold ?? 20);
+  const windowMinutes = numberInput('windowMinutes', service.errorLogs?.windowMinutes ?? 15);
+  const repository = textInput('repositoryPath', service.repositoryPath, 'C:/Repos/meu-servico-api');
+
+  let tagsEdited = Boolean(service.name);
+  tags.addEventListener('input', () => {
+    tagsEdited = true;
+  });
+  name.addEventListener('input', () => {
+    legend.textContent = name.value.trim() || 'Novo serviço';
+    if (!tagsEdited) {
+      tags.value = name.value.trim() ? `service:${name.value.trim()}` : '';
+    }
+  });
+
+  const remove = create('button', 'action action--quiet settings__remove', 'Remover este serviço');
+  remove.type = 'button';
+  remove.addEventListener('click', () => editor.remove());
+
+  editor.append(
+    legend,
+    field('Nome do serviço no Datadog', null, name),
+    field('Tags dos monitors', 'Separe por vírgula. Vazio desliga a consulta de monitors.', tags),
+    field('Query de erros em log', 'Opcional. Use para ambientes sem monitor, como homologação.', query, true),
+    field('Limite de erros', 'A partir de quantos erros vira alerta.', threshold),
+    field('Janela em minutos', null, windowMinutes),
+    field('Pasta do repositório', 'Opcional. O agente lê o código desta pasta.', repository, true),
+    remove
+  );
+  return editor;
+}
+
+function readServiceEditors() {
+  return [...elements.settingsList.querySelectorAll('.settings__service')].map((editor) => {
+    const value = (name) => editor.querySelector(`[name="${name}"]`).value.trim();
+    const query = value('query');
+    return {
+      name: value('name'),
+      monitorTags: value('monitorTags').split(',').map((tag) => tag.trim()).filter(Boolean),
+      errorLogs: query ? { query, threshold: Number(value('threshold')), windowMinutes: Number(value('windowMinutes')) } : null,
+      repositoryPath: value('repositoryPath') || null
+    };
+  });
+}
+
+function openSettings({ addEmpty = false } = {}) {
+  const services = currentState?.settings.services ?? [];
+  elements.settingsList.replaceChildren(...services.map(serviceEditor));
+  if (addEmpty || services.length === 0) {
+    elements.settingsList.append(serviceEditor({}));
+  }
+  elements.settingsError.hidden = true;
+  elements.settings.showModal();
+  elements.settingsList.querySelector('.settings__service:last-child input')?.focus();
+}
+
 elements.check.addEventListener('click', () => {
+  if (mastheadAction === 'datadog-login') {
+    fetch('/api/datadog/login', { method: 'POST' });
+    return;
+  }
+  if (mastheadAction === 'add-service') {
+    openSettings({ addEmpty: true });
+    return;
+  }
   elements.check.disabled = true;
   fetch('/api/check', { method: 'POST' });
+});
+
+elements.openSettings.addEventListener('click', () => openSettings());
+elements.settingsCancel.addEventListener('click', () => elements.settings.close());
+elements.settingsAdd.addEventListener('click', () => {
+  const editor = serviceEditor({});
+  elements.settingsList.append(editor);
+  editor.querySelector('input').focus();
+});
+
+elements.settingsSave.addEventListener('click', async () => {
+  elements.settingsSave.disabled = true;
+  const response = await fetch('/api/settings/services', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ services: readServiceEditors() })
+  });
+  elements.settingsSave.disabled = false;
+
+  if (response.ok) {
+    elements.settings.close();
+    return;
+  }
+
+  const failure = await response.json().catch(() => ({}));
+  elements.settingsError.hidden = false;
+  elements.settingsError.textContent = failure.error ?? 'Não consegui salvar os serviços.';
 });
 
 elements.detailCopy.addEventListener('click', async () => {
@@ -402,7 +587,13 @@ elements.detailLogin.addEventListener('click', () => {
 });
 
 const stream = new EventSource('/api/events');
-stream.onmessage = (message) => render(JSON.parse(message.data));
+stream.onmessage = (message) => {
+  const firstRender = currentState === null;
+  render(JSON.parse(message.data));
+  if (firstRender && location.hash === '#servicos') {
+    openSettings();
+  }
+};
 stream.onerror = () => {
   elements.checked.textContent = 'Sem conexão com o vigia. Confira se "npm start" ainda está rodando.';
 };

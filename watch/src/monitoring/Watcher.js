@@ -1,25 +1,29 @@
 import { EventEmitter } from 'node:events';
 import { detectTransitions } from './detectTransitions.js';
 
+const emptyView = (name) => ({ name, signals: [], errors: [] });
+
 export class Watcher extends EventEmitter {
-  #services;
+  #getServices;
   #signalSources;
   #historyStore;
   #notifier;
+  #session;
   #intervalSeconds;
   #timer = null;
   #checking = false;
+  #checkAgain = false;
   #checkedAt = null;
-  #serviceViews;
+  #views = new Map();
 
-  constructor({ services, signalSources, historyStore, notifier, intervalSeconds }) {
+  constructor({ getServices, signalSources, historyStore, notifier, session, intervalSeconds }) {
     super();
-    this.#services = services;
+    this.#getServices = getServices;
     this.#signalSources = signalSources;
     this.#historyStore = historyStore;
     this.#notifier = notifier;
+    this.#session = session;
     this.#intervalSeconds = intervalSeconds;
-    this.#serviceViews = services.map((service) => ({ name: service.name, signals: [], errors: [] }));
   }
 
   start() {
@@ -37,13 +41,14 @@ export class Watcher extends EventEmitter {
       checkedAt: this.#checkedAt,
       checking: this.#checking,
       intervalSeconds: this.#intervalSeconds,
-      services: this.#serviceViews,
+      services: this.#getServices().map((service) => this.#views.get(service.name) ?? emptyView(service.name)),
       events: this.#historyStore.events.slice(0, 100)
     };
   }
 
   async check() {
     if (this.#checking) {
+      this.#checkAgain = true;
       return;
     }
 
@@ -51,34 +56,46 @@ export class Watcher extends EventEmitter {
     this.emit('changed');
 
     try {
-      const occurredAt = new Date().toISOString();
-      const previousStates = this.#historyStore.states;
-      const nextStates = {};
-      const transitions = [];
-      const views = [];
-
-      for (const [index, service] of this.#services.entries()) {
-        const view = await this.#collectService(service, this.#serviceViews[index]);
-        views.push(view);
-
-        transitions.push(...detectTransitions({ serviceName: service.name, signals: view.freshSignals, previousStates, occurredAt }));
-        for (const signal of view.freshSignals) {
-          nextStates[signal.id] = signal.state;
-        }
-      }
-
-      this.#serviceViews = views.map(({ freshSignals, ...view }) => view);
-      this.#checkedAt = occurredAt;
-      await this.#historyStore.record({ states: nextStates, transitions });
-
-      if (transitions.length > 0) {
-        await this.#notifier.notify(transitions);
+      const session = await this.#session.refresh();
+      if (session.authenticated) {
+        await this.#collect();
       }
     } catch (error) {
       this.emit('failed', error);
     } finally {
       this.#checking = false;
       this.emit('changed');
+    }
+
+    if (this.#checkAgain) {
+      this.#checkAgain = false;
+      this.check();
+    }
+  }
+
+  async #collect() {
+    const occurredAt = new Date().toISOString();
+    const previousStates = this.#historyStore.states;
+    const nextStates = {};
+    const transitions = [];
+    const views = new Map();
+
+    for (const service of this.#getServices()) {
+      const { freshSignals, ...view } = await this.#collectService(service, this.#views.get(service.name) ?? emptyView(service.name));
+      views.set(service.name, view);
+
+      transitions.push(...detectTransitions({ serviceName: service.name, signals: freshSignals, previousStates, occurredAt }));
+      for (const signal of freshSignals) {
+        nextStates[signal.id] = signal.state;
+      }
+    }
+
+    this.#views = views;
+    this.#checkedAt = occurredAt;
+    await this.#historyStore.record({ states: nextStates, transitions });
+
+    if (transitions.length > 0) {
+      await this.#notifier.notify(transitions);
     }
   }
 

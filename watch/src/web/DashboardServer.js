@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { ConfigurationError } from '../configuration/loadConfiguration.js';
 import { InvestigationUnavailableError } from '../investigation/InvestigationService.js';
 
 const staticFiles = {
@@ -10,7 +11,7 @@ const staticFiles = {
 };
 
 const broadcastIntervalMs = 250;
-const maximumBodyBytes = 16 * 1024;
+const maximumBodyBytes = 256 * 1024;
 
 function readJsonBody(request) {
   return new Promise((resolve, reject) => {
@@ -41,22 +42,28 @@ export class DashboardServer {
   #publicDirectory;
   #watcher;
   #investigations;
+  #session;
+  #settings;
   #datadogAppUrl;
   #server;
   #subscribers = new Set();
   #broadcastTimer = null;
 
-  constructor({ port, publicDirectory, watcher, investigations, datadogAppUrl }) {
+  constructor({ port, publicDirectory, watcher, investigations, session, settings, datadogAppUrl }) {
     this.#port = port;
     this.#publicDirectory = publicDirectory;
     this.#watcher = watcher;
     this.#investigations = investigations;
+    this.#session = session;
+    this.#settings = settings;
     this.#datadogAppUrl = datadogAppUrl;
     this.#server = createServer((request, response) => {
       this.#handle(request, response).catch((error) => this.#sendJson(response, 500, { error: error.message }));
     });
     this.#watcher.on('changed', () => this.#scheduleBroadcast());
     this.#investigations.on('changed', () => this.#scheduleBroadcast());
+    this.#session.on('changed', () => this.#scheduleBroadcast());
+    this.#settings.on('changed', () => this.#scheduleBroadcast());
   }
 
   get url() {
@@ -74,6 +81,8 @@ export class DashboardServer {
     return {
       ...this.#watcher.snapshot(),
       datadogAppUrl: this.#datadogAppUrl,
+      datadog: this.#session.status,
+      settings: { services: this.#settings.services },
       agent: this.#investigations.availability,
       investigations: this.#investigations.investigations
     };
@@ -117,6 +126,17 @@ export class DashboardServer {
       return;
     }
 
+    if (route === 'POST /api/datadog/login') {
+      this.#session.login();
+      this.#sendJson(response, 202, { accepted: true });
+      return;
+    }
+
+    if (route === 'PUT /api/settings/services') {
+      await this.#replaceServices(request, response);
+      return;
+    }
+
     if (route === 'POST /api/agent/login') {
       this.#investigations.login().catch((error) => console.error(`Cursor login failed: ${error.message}`));
       this.#sendJson(response, 202, { accepted: true });
@@ -144,6 +164,20 @@ export class DashboardServer {
     }
 
     response.writeHead(404).end();
+  }
+
+  async #replaceServices(request, response) {
+    try {
+      const body = await readJsonBody(request);
+      await this.#settings.replaceServices(body.services);
+      this.#sendJson(response, 200, { services: this.#settings.services });
+    } catch (error) {
+      if (error instanceof ConfigurationError || !error.code) {
+        this.#sendJson(response, 400, { error: error.message });
+        return;
+      }
+      throw error;
+    }
   }
 
   async #startInvestigation(request, response) {

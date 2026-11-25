@@ -35,41 +35,42 @@ export class PupClient {
     this.#timeoutMs = timeoutMs;
   }
 
-  async run(commandArguments) {
-    const output = await this.#withFallback([...commandArguments, '--output', 'json']);
+  async run(commandArguments, options = {}) {
+    const { stdout, stderr } = await this.#withFallback([...commandArguments, '--output', 'json'], options);
     try {
-      return JSON.parse(output);
+      return JSON.parse(stdout);
     } catch {
-      throw new PupError('pup returned output that is not JSON');
+      throw new PupError(summarizeFailure(stderr, stdout));
     }
   }
 
-  runText(commandArguments) {
-    return this.#withFallback(commandArguments);
+  async runText(commandArguments, options = {}) {
+    const { stdout } = await this.#withFallback(commandArguments, options);
+    return stdout;
   }
 
-  async #withFallback(commandArguments) {
+  async #withFallback(commandArguments, options) {
     try {
-      return await this.#execute(commandArguments);
+      return await this.#execute(commandArguments, options);
     } catch (error) {
       const fallback = defaultInstallLocation();
       if (error.notInstalled && fallback && fallback !== this.#executable && existsSync(fallback)) {
         this.#executable = fallback;
-        return this.#execute(commandArguments);
+        return this.#execute(commandArguments, options);
       }
       throw error;
     }
   }
 
-  #execute(commandArguments) {
+  #execute(commandArguments, { timeoutMs = this.#timeoutMs } = {}) {
     return new Promise((resolve, reject) => {
       execFile(
         this.#executable,
         [...this.#leadingArguments, ...commandArguments],
-        { timeout: this.#timeoutMs, maxBuffer: 64 * 1024 * 1024, windowsHide: true },
+        { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, windowsHide: true },
         (error, stdout, stderr) => {
           if (!error) {
-            resolve(stdout);
+            resolve({ stdout, stderr });
             return;
           }
           if (error.code === 'ENOENT') {
@@ -77,7 +78,7 @@ export class PupClient {
             return;
           }
           if (error.killed) {
-            reject(new PupError(`pup timed out after ${this.#timeoutMs / 1000}s`));
+            reject(new PupError(`pup timed out after ${timeoutMs / 1000}s`));
             return;
           }
           reject(new PupError(summarizeFailure(stderr, stdout), { exitCode: error.code }));

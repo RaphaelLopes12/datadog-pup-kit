@@ -12,7 +12,10 @@
       <h1 id="headline">Aguardando a primeira verificação</h1>
       <p id="checked" class="masthead__meta"></p>
     </div>
-    <button type="button" id="check" class="action">Verificar agora</button>
+    <div class="masthead__actions">
+      <button type="button" id="open-settings" class="action action--quiet">Serviços</button>
+      <button type="button" id="check" class="action">Verificar agora</button>
+    </div>
   </header>
 
   <div class="layout">
@@ -44,6 +47,18 @@
     </div>
     <p id="detail-agent-note" class="detail__note" hidden></p>
     <button type="button" id="detail-login" class="action action--quiet" hidden>Entrar no Cursor</button>
+  </dialog>
+
+  <dialog id="settings" class="detail settings" aria-labelledby="settings-title">
+    <h2 id="settings-title">Serviços vigiados</h2>
+    <p class="detail__text">O vigia consulta os monitors de cada serviço e, se você informar uma query, conta os erros em log. A pasta do repositório é usada só pelo agente, para ler o código.</p>
+    <div id="settings-list" class="settings__list"></div>
+    <button type="button" id="settings-add" class="action action--quiet">Adicionar serviço</button>
+    <p id="settings-error" class="case__error" role="alert" hidden></p>
+    <div class="detail__actions">
+      <button type="button" id="settings-save" class="action">Salvar serviços</button>
+      <button type="button" id="settings-cancel" class="action action--quiet">Cancelar</button>
+    </div>
   </dialog>
 
   <script src="/dashboard.js" type="module"></script>

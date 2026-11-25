@@ -22,7 +22,7 @@ function summarizeArguments(value) {
 export class InvestigationService extends EventEmitter {
   #gateway;
   #pupClient;
-  #services;
+  #getServices;
   #model;
   #maximumMinutes;
   #storagePath;
@@ -32,11 +32,11 @@ export class InvestigationService extends EventEmitter {
   #availability = null;
   #availabilityCheckedAt = 0;
 
-  constructor({ gateway, pupClient, services, model, maximumMinutes, dataDirectory }) {
+  constructor({ gateway, pupClient, getServices, model, maximumMinutes, dataDirectory }) {
     super();
     this.#gateway = gateway;
     this.#pupClient = pupClient;
-    this.#services = services;
+    this.#getServices = getServices;
     this.#model = model;
     this.#maximumMinutes = maximumMinutes;
     this.#storagePath = path.join(dataDirectory, 'investigations.json');
@@ -93,7 +93,7 @@ export class InvestigationService extends EventEmitter {
       throw new InvestigationUnavailableError(this.#availability.reason);
     }
 
-    const service = this.#services.find((candidate) => candidate.name === serviceName);
+    const service = this.#getServices().find((candidate) => candidate.name === serviceName);
     if (!service) {
       throw new InvestigationUnavailableError(`Serviço não configurado: ${serviceName}`);
     }
