@@ -1,0 +1,38 @@
+---
+description: Consultar o Datadog (logs, métricas, monitors, traces, incidents, SLOs, erros) pelo CLI pup ao investigar comportamento de produção
+alwaysApply: false
+---
+
+# Datadog via pup
+
+Use o CLI `pup` no terminal para qualquer dado do Datadog. Não chame a API HTTP direto e não peça API key ou App key.
+
+## Descoberta
+
+- `pup --help` e `pup <dominio> --help` listam comandos e flags. Confira a ajuda antes de usar uma flag que você não viu nesta sessão.
+- `pup agent schema` devolve o catálogo completo em formato legível por máquina.
+
+## Consultas
+
+- Sempre limite a janela de tempo (`--from="1h"`) e filtre por `service`, `env` e tags. Comece estreito e alargue só se vier vazio.
+- Prefira agregação (`logs aggregate`, `traces aggregate`) antes de listar eventos brutos.
+- A saída é JSON. Analise e resuma; não cole o bruto na resposta.
+- Cite o que sustenta cada conclusão: query usada, janela, contagem, ids de trace ou de monitor.
+- Cruze o que achar com o código deste repositório (stack trace, nome de classe, rota, mensagem de log) antes de apontar causa.
+
+Pontos de partida:
+
+```bash
+pup logs search --query="service:<servico> status:error" --from="1h"
+pup monitors list --tags="service:<servico>"
+pup traces search --query="service:<servico>" --from="1h"
+pup error-tracking issues search --help
+pup metrics query --query="avg:system.cpu.user{service:<servico>}"
+```
+
+## Limites
+
+- Somente leitura. Não rode `create`, `update`, `delete`, `cancel`, `run`, `trigger`, `upsert`, `add`, `mitigate` nem qualquer subcomando de `api-keys` ou `app-keys` sem pedido explícito na conversa.
+- Nunca rode `pup auth token` nem imprima tokens, keys ou o conteúdo de `~/.config/pup`.
+- Erro de autenticação ou de permissão: pare e peça para a pessoa rodar `pup auth login` no terminal dela. Não tente contornar.
+- Logs e traces podem conter dado pessoal de cliente. Não copie CPF, e-mail, telefone, placa ou token para a resposta, para arquivos do repositório ou para mensagens de commit.

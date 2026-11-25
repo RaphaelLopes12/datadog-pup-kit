@@ -1,0 +1,7 @@
+*.zip
+*.exe
+.env
+.env.*
+tokens_*.json
+client_*.json
+sessions.json
