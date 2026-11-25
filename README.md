@@ -16,6 +16,8 @@ Nenhuma API key ou App key é usada. O token fica no Windows Credential Manager 
 
 ## Uso
 
+Os comandos abaixo funcionam no PowerShell e no Git Bash. No Git Bash, escreva caminhos com `/`: a barra invertida é caractere de escape e some do comando.
+
 ### 1. Instalar o pup
 
 ```powershell
@@ -31,13 +33,13 @@ Reabra o terminal e o Cursor depois da primeira instalação.
 Site padrão (`datadoghq.com`):
 
 ```powershell
-./scripts/Connect-Datadog.ps1
+powershell -ExecutionPolicy Bypass -File ./scripts/Connect-Datadog.ps1
 ```
 
 Organização com SSO e página de login própria (`<empresa>.datadoghq.com`):
 
 ```powershell
-./scripts/Connect-Datadog.ps1 -Site <empresa>.datadoghq.com -PersistSite
+powershell -ExecutionPolicy Bypass -File ./scripts/Connect-Datadog.ps1 -Site <empresa>.datadoghq.com -PersistSite
 ```
 
 `-PersistSite` grava `DD_SITE` no ambiente do usuário, para que os comandos seguintes e o terminal do Cursor usem o mesmo site. Também existem `-Org <nome>` para sessão nomeada e `-OrgUuid <uuid>` para pré-selecionar a organização.
@@ -63,7 +65,7 @@ Instala em `~/.cursor/skills` os guias mantidos pelo Datadog (logs, APM, monitor
 A rule deste kit complementa as skills oficiais com os limites do time: somente leitura, sem expor token, cuidado com dado pessoal.
 
 ```powershell
-./scripts/Install-CursorRule.ps1 -RepoPath C:\src\meu-servico -ExcludeFromGit
+powershell -ExecutionPolicy Bypass -File ./scripts/Install-CursorRule.ps1 -RepoPath C:/src/meu-servico -ExcludeFromGit
 ```
 
 `-ExcludeFromGit` registra o arquivo em `.git/info/exclude`, então a rule fica local e não aparece no `git status` do repositório do serviço. Sem o parâmetro, a rule pode ser commitada e compartilhada com o time.
